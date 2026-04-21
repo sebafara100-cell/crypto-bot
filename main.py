@@ -20,7 +20,7 @@ TOP_ALTS = [
     "LINKUSDT", "LTCUSDT", "BCHUSDT", "UNIUSDT", "ATOMUSDT",
     "XLMUSDT", "ETCUSDT", "NEARUSDT", "APTUSDT", "FILUSDT",
     "INJUSDT", "AAVEUSDT", "ARBUSDT", "OPUSDT", "MKRUSDT",
-    "SUIUSDT", "TIAUSDT"
+    "SUIUSDT", "TIAUSDT" 
 ]
 
 def calcular_rsi(precios, periodo=14):
