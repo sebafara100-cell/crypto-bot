@@ -1,6 +1,5 @@
 import requests
 import pandas as pd
-import numpy as np
 import time
 import schedule
 from datetime import datetime
@@ -10,56 +9,48 @@ TELEGRAM_CHAT_ID = "605041014"
 
 PERF_7D_LONG = -8.0
 PERF_7D_SHORT = 8.0
-RSI_LONG = 35
-RSI_SHORT = 65
+RSI_LONG = 40
+RSI_SHORT = 60
 RSI_PERIOD = 14
 
-TOP_ALTS = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "SHIBUSDT", "DOTUSDT",
-    "LINKUSDT", "LTCUSDT", "BCHUSDT", "UNIUSDT", "ATOMUSDT",
-    "XLMUSDT", "ETCUSDT", "NEARUSDT", "APTUSDT", "FILUSDT",
-    "INJUSDT", "AAVEUSDT", "OPUUSDT", "HBARUSDT", "ALGOUSDT",
-    "VETUSDT" 
+TOP_IDS = [
+    "bitcoin","ethereum","binancecoin","solana","ripple",
+    "dogecoin","cardano","avalanche-2","shiba-inu","polkadot",
+    "chainlink","litecoin","bitcoin-cash","uniswap","cosmos",
+    "stellar","ethereum-classic","near","aptos","filecoin",
+    "injective-protocol","aave","optimism","algorand","vechain",
+    "hedera-hashgraph","internet-computer","the-graph","render-token","kaspa"
 ]
 
 def calcular_rsi(precios, periodo=14):
     delta = pd.Series(precios).diff()
     ganancia = delta.clip(lower=0)
     perdida = -delta.clip(upper=0)
-    media_gan = ganancia.ewm(com=periodo - 1, min_periods=periodo).mean()
-    media_per = perdida.ewm(com=periodo - 1, min_periods=periodo).mean()
+    media_gan = ganancia.ewm(com=periodo-1, min_periods=periodo).mean()
+    media_per = perdida.ewm(com=periodo-1, min_periods=periodo).mean()
     rs = media_gan / media_per
     rsi = 100 - (100 / (1 + rs))
     return rsi.iloc[-1]
 
-def obtener_datos_binance(simbolo, intervalo="4h", limite=50):
-    url = "https://fapi.binance.com/fapi/v1/klines"
-    params = {"symbol": simbolo, "interval": intervalo, "limit": limite}
+def obtener_datos_moneda(coin_id):
+    url = "https://api.coingecko.com/api/v3/coins/" + coin_id + "/market_chart"
+    params = {"vs_currency": "usd", "days": "14", "interval": "hourly"}
     try:
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         data = r.json()
-        cierres = [float(v[4]) for v in data]
-        return cierres
+        precios = [p[1] for p in data["prices"]]
+        return precios
     except Exception as e:
-        print("Error obteniendo " + simbolo + ": " + str(e))
+        print("Error " + coin_id + ": " + str(e))
         return None
 
-def calcular_rendimiento_7d(simbolo):
-    url = "https://fapi.binance.com/fapi/v1/klines"
-    params = {"symbol": simbolo, "interval": "1d", "limit": 8}
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        precio_hace_7d = float(data[0][4])
-        precio_actual = float(data[-1][4])
-        rendimiento = ((precio_actual - precio_hace_7d) / precio_hace_7d) * 100
-        return round(rendimiento, 2)
-    except Exception as e:
-        print("Error rendimiento 7D " + simbolo + ": " + str(e))
+def calcular_rendimiento_7d(precios):
+    if len(precios) < 170:
         return None
+    precio_hace_7d = precios[-168]
+    precio_actual = precios[-1]
+    return round(((precio_actual - precio_hace_7d) / precio_hace_7d) * 100, 2)
 
 def enviar_telegram(mensaje):
     url = "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage"
@@ -78,35 +69,41 @@ def escanear_mercado():
     print("Escaneando mercado: " + ahora)
     senales_long = []
     senales_short = []
-    for simbolo in TOP_ALTS:
-        print("Revisando " + simbolo)
-        perf_7d = calcular_rendimiento_7d(simbolo)
+
+    for coin_id in TOP_IDS:
+        print("Revisando " + coin_id)
+        precios = obtener_datos_moneda(coin_id)
+        if precios is None or len(precios) < RSI_PERIOD + 2:
+            continue
+        perf_7d = calcular_rendimiento_7d(precios)
         if perf_7d is None:
             continue
-        cierres_4h = obtener_datos_binance(simbolo, "4h", 50)
-        if cierres_4h is None or len(cierres_4h) < RSI_PERIOD + 2:
-            continue
-        rsi_actual = calcular_rsi(cierres_4h, RSI_PERIOD)
-        rsi_previo = calcular_rsi(cierres_4h[:-1], RSI_PERIOD)
-        precio = cierres_4h[-1]
+        rsi_actual = calcular_rsi(precios, RSI_PERIOD)
+        rsi_previo = calcular_rsi(precios[:-1], RSI_PERIOD)
+        precio = precios[-1]
+        print(coin_id + " Perf7D: " + str(perf_7d) + "% RSI: " + str(round(rsi_actual, 1)))
+
         if perf_7d <= PERF_7D_LONG and rsi_previo < RSI_LONG and rsi_actual > rsi_previo:
-            senales_long.append({"simbolo": simbolo, "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual, 1)})
+            senales_long.append({"simbolo": coin_id.upper(), "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual, 1)})
         if perf_7d >= PERF_7D_SHORT and rsi_previo > RSI_SHORT and rsi_actual < rsi_previo:
-            senales_short.append({"simbolo": simbolo, "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual, 1)})
-        time.sleep(0.3)
+            senales_short.append({"simbolo": coin_id.upper(), "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual, 1)})
+
+        time.sleep(2)
+
     total = len(senales_long) + len(senales_short)
     if total == 0:
         print("Sin senales esta vez")
         return
+
     mensaje = "📡 <b>CRYPTO SCANNER " + ahora + "</b>\n\n"
     if senales_long:
         mensaje += "🟢 <b>LONG SETUPS (" + str(len(senales_long)) + ")</b>\n"
         for s in senales_long:
-            mensaje += "<b>" + s["simbolo"] + "</b> | Precio: " + str(round(s["precio"], 4)) + " | 7D: " + str(s["perf_7d"]) + "% | RSI: " + str(s["rsi"]) + "\n"
+            mensaje += "<b>" + s["simbolo"] + "</b> | $" + str(round(s["precio"], 4)) + " | 7D: " + str(s["perf_7d"]) + "% | RSI: " + str(s["rsi"]) + "\n"
     if senales_short:
         mensaje += "\n🔴 <b>SHORT SETUPS (" + str(len(senales_short)) + ")</b>\n"
         for s in senales_short:
-            mensaje += "<b>" + s["simbolo"] + "</b> | Precio: " + str(round(s["precio"], 4)) + " | 7D: " + str(s["perf_7d"]) + "% | RSI: " + str(s["rsi"]) + "\n"
+            mensaje += "<b>" + s["simbolo"] + "</b> | $" + str(round(s["precio"], 4)) + " | 7D: " + str(s["perf_7d"]) + "% | RSI: " + str(s["rsi"]) + "\n"
     mensaje += "\n<i>Confirma siempre en chart.</i>"
     enviar_telegram(mensaje)
 
