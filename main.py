@@ -88,7 +88,7 @@ def escanear_mercado():
         if perf_7d >= PERF_7D_SHORT and rsi_previo > RSI_SHORT and rsi_actual < rsi_previo:
             senales_short.append({"simbolo": coin_id.upper(), "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual, 1)})
 
-        time.sleep(2)
+        time.sleep(6)
 
     total = len(senales_long) + len(senales_short)
     if total == 0:
