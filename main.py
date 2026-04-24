@@ -34,7 +34,7 @@ def calcular_rsi(precios, periodo=14):
     return rsi.iloc[-1]
 
 def obtener_datos_binance(simbolo, intervalo="4h", limite=50):
-    url = "https://api.binance.com/api/v3/klines"
+    url = "https://fapi.binance.com/fapi/v1/klines"
     params = {"symbol": simbolo, "interval": intervalo, "limit": limite}
     try:
         r = requests.get(url, params=params, timeout=10)
@@ -47,7 +47,7 @@ def obtener_datos_binance(simbolo, intervalo="4h", limite=50):
         return None
 
 def calcular_rendimiento_7d(simbolo):
-    url = "https://api.binance.com/api/v3/klines"
+    url = "https://fapi.binance.com/fapi/v1/klines"
     params = {"symbol": simbolo, "interval": "1d", "limit": 8}
     try:
         r = requests.get(url, params=params, timeout=10)
