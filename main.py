@@ -14,12 +14,9 @@ RSI_SHORT = 60
 RSI_PERIOD = 14
 
 TOP_IDS = [
-    "bitcoin","ethereum","binancecoin","solana","ripple",
-    "dogecoin","cardano","avalanche-2","shiba-inu","polkadot",
-    "chainlink","litecoin","bitcoin-cash","uniswap","cosmos",
-    "stellar","ethereum-classic","near","aptos","filecoin",
-    "injective-protocol","aave","optimism","algorand","vechain",
-    "hedera-hashgraph","internet-computer","the-graph","render-token","kaspa"
+    "bitcoin","ethereum","binance-coin","solana","xrp",
+    "dogecoin","cardano","avalanche","polkadot","chainlink",
+    "litecoin","uniswap","cosmos","stellar","near"
 ]
 
 def calcular_rsi(precios, periodo=14):
@@ -33,13 +30,13 @@ def calcular_rsi(precios, periodo=14):
     return rsi.iloc[-1]
 
 def obtener_datos_moneda(coin_id):
-    url = "https://api.coingecko.com/api/v3/coins/" + coin_id + "/market_chart"
-    params = {"vs_currency": "usd", "days": "14", "interval": "hourly"}
+    url = "https://api.coincap.io/v2/assets/" + coin_id + "/history"
+    params = {"interval": "h1", "start": int((time.time()-14*86400)*1000), "end": int(time.time()*1000)}
     try:
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
-        data = r.json()
-        precios = [p[1] for p in data["prices"]]
+        data = r.json()["data"]
+        precios = [float(p["priceUsd"]) for p in data]
         return precios
     except Exception as e:
         print("Error " + coin_id + ": " + str(e))
@@ -48,9 +45,7 @@ def obtener_datos_moneda(coin_id):
 def calcular_rendimiento_7d(precios):
     if len(precios) < 170:
         return None
-    precio_hace_7d = precios[-168]
-    precio_actual = precios[-1]
-    return round(((precio_actual - precio_hace_7d) / precio_hace_7d) * 100, 2)
+    return round(((precios[-1] - precios[-168]) / precios[-168]) * 100, 2)
 
 def enviar_telegram(mensaje):
     url = "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage"
@@ -66,10 +61,9 @@ def enviar_telegram(mensaje):
 
 def escanear_mercado():
     ahora = datetime.now().strftime("%d/%m/%Y %H:%M")
-    print("Escaneando mercado: " + ahora)
+    print("Escaneando: " + ahora)
     senales_long = []
     senales_short = []
-
     for coin_id in TOP_IDS:
         print("Revisando " + coin_id)
         precios = obtener_datos_moneda(coin_id)
@@ -81,29 +75,26 @@ def escanear_mercado():
         rsi_actual = calcular_rsi(precios, RSI_PERIOD)
         rsi_previo = calcular_rsi(precios[:-1], RSI_PERIOD)
         precio = precios[-1]
-        print(coin_id + " Perf7D: " + str(perf_7d) + "% RSI: " + str(round(rsi_actual, 1)))
-
+        print(coin_id + " 7D:" + str(perf_7d) + "% RSI:" + str(round(rsi_actual,1)))
         if perf_7d <= PERF_7D_LONG and rsi_previo < RSI_LONG and rsi_actual > rsi_previo:
-            senales_long.append({"simbolo": coin_id.upper(), "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual, 1)})
+            senales_long.append({"simbolo": coin_id.upper(), "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual,1)})
         if perf_7d >= PERF_7D_SHORT and rsi_previo > RSI_SHORT and rsi_actual < rsi_previo:
-            senales_short.append({"simbolo": coin_id.upper(), "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual, 1)})
-
+            senales_short.append({"simbolo": coin_id.upper(), "precio": precio, "perf_7d": perf_7d, "rsi": round(rsi_actual,1)})
         time.sleep(2)
 
-    total = len(senales_long) + len(senales_short)
-    if total == 0:
+    if len(senales_long) + len(senales_short) == 0:
         print("Sin senales esta vez")
         return
 
     mensaje = "📡 <b>CRYPTO SCANNER " + ahora + "</b>\n\n"
     if senales_long:
-        mensaje += "🟢 <b>LONG SETUPS (" + str(len(senales_long)) + ")</b>\n"
+        mensaje += "🟢 <b>LONG (" + str(len(senales_long)) + ")</b>\n"
         for s in senales_long:
-            mensaje += "<b>" + s["simbolo"] + "</b> | $" + str(round(s["precio"], 4)) + " | 7D: " + str(s["perf_7d"]) + "% | RSI: " + str(s["rsi"]) + "\n"
+            mensaje += "<b>" + s["simbolo"] + "</b> $" + str(round(s["precio"],4)) + " | 7D:" + str(s["perf_7d"]) + "% RSI:" + str(s["rsi"]) + "\n"
     if senales_short:
-        mensaje += "\n🔴 <b>SHORT SETUPS (" + str(len(senales_short)) + ")</b>\n"
+        mensaje += "\n🔴 <b>SHORT (" + str(len(senales_short)) + ")</b>\n"
         for s in senales_short:
-            mensaje += "<b>" + s["simbolo"] + "</b> | $" + str(round(s["precio"], 4)) + " | 7D: " + str(s["perf_7d"]) + "% | RSI: " + str(s["rsi"]) + "\n"
+            mensaje += "<b>" + s["simbolo"] + "</b> $" + str(round(s["precio"],4)) + " | 7D:" + str(s["perf_7d"]) + "% RSI:" + str(s["rsi"]) + "\n"
     mensaje += "\n<i>Confirma siempre en chart.</i>"
     enviar_telegram(mensaje)
 
